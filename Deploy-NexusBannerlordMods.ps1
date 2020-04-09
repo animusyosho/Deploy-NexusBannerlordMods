@@ -11,8 +11,15 @@ Param (
    
 )
 
-## Source: https://github.com/animusyosho/Deploy-NexusBannerlordMods/
+## https://github.com/animusyosho/Deploy-NexusBannerlordMods/
 
+# Run elevated
+If (-NOT ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))
+{
+  # Relaunch as an elevated process:
+  Start-Process powershell.exe "-NoExit","-File",('"{0}"' -f $MyInvocation.MyCommand.Path) -Verb RunAs
+  exit
+}
 $Error.Clear()
 
 # Functions from mergeXml module with a change to the logging from write-host to write-verbose - https://gallery.technet.microsoft.com/office/Merge-Two-XML-Files-using-a5010498
@@ -292,6 +299,7 @@ $BannerlordInstalledModulesPath = "$BannerlordPath\modules".replace('\\', '\')
 $Timestamp = Get-Date -UFormat %Y%m%dT%H%M%S
 $BannerlordModsConfigBackupPath = "$BannerlordModsPath\..\Config Backups\".replace('\\', '\')
 $BackupsToKeep = 50
+$ConfigFileRegex = '.*\\moduledata\\.*(config|setting).*\.xml'
 if (!(Test-Path -Path $BannerlordModsConfigBackupPath)) {
    $CreateMissingDirectory = New-item -ItemType Directory -Path $BannerlordModsConfigBackupPath -Force
 }
@@ -316,7 +324,7 @@ else {
          'ModuleName'  = $OverrideModuleDirectory.Name
          'ModuleFiles' = $OverrideModuleDirectory | Get-ChildItem -Recurse -File
       }
-      $ConfigFiles = $OverrideModule.ModuleFiles | Where-Object -FilterScript { $_.FullName.tolower() -match '.*\\moduledata\\.*config.*\.xml' }
+      $ConfigFiles = $OverrideModule.ModuleFiles | Where-Object -FilterScript { $_.FullName.tolower() -match $ConfigFileRegex }
       if ($ConfigFiles) {
          $OverrideModule | Add-Member -MemberType NoteProperty -Name 'ConfigFiles' -Value $ConfigFiles
          if (!(Test-Path -Path $ConfigBackupPath)) {
@@ -344,7 +352,7 @@ else {
          'ModuleName'  = $NewModuleDirectory.Name
          'ModuleFiles' = $NewModuleDirectory | Get-ChildItem -Recurse -File
       }
-      $ConfigFiles = $NewModule.ModuleFiles | Where-Object -FilterScript { $_.FullName.tolower() -match '.*\\moduledata\\.*config.*\.xml' }
+      $ConfigFiles = $NewModule.ModuleFiles | Where-Object -FilterScript { $_.FullName.tolower() -match $ConfigFileRegex }
       if ($ConfigFiles) {
          $NewModule | Add-Member -MemberType NoteProperty -Name 'ConfigFiles' -Value $ConfigFiles
       }
