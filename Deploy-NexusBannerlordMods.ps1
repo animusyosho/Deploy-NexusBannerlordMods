@@ -1,23 +1,21 @@
-# Change these to set your local computer paths
-<#Param (
+Param (
+
    [Parameter(Mandatory = $true)]
-   [string]$BannerlordPath  # Where bannerlord is installed. Common path: 'C:\Program Files(x86)\steam\steamapps\common\Mount & Blade II Bannerlord\'
+   [string]$BannerlordPath, # Where bannerlord is installed. Common path: 'C:\Program Files(x86)\steam\steamapps\common\Mount & Blade II Bannerlord\'
 
-    [Parameter(Mandatory = $true)]
-    [string]$BannerlordModsPath  # Where vortex keeps mods. Common path: 'C:\Users\YourUserNameHere\AppData\Roaming\Vortex\mountandblade2bannerlord\mods\'
+   [Parameter(Mandatory = $true)]
+   [string]$BannerlordModsPath, # Where vortex keeps mods. Common path: 'C:\Users\YourUserNameHere\AppData\Roaming\Vortex\mountandblade2bannerlord\mods\'
    
-    [Parameter(Mandatory = $false)]
-    [switch]$MergeConfigs = $false  # Use this switch only if you want to maintain config settings you have changed in some mods to be maintained - Note that this can break or miss changes if the mod author significantly changes the default config file or totally miss the file if it is in a weird place or has a weird name!
+   [Parameter(Mandatory = $false)]
+   [switch]$MergeConfigs = $false  # Use this switch only if you want to maintain config settings you have changed in some mods to be maintained - Note that this can break or miss changes if the mod author significantly changes the default config file or totally miss the file if it is in a weird place or has a weird name!
    
-    )#>
-$BannerlordPath = 'D:\Games\steamapps\common\Mount & Blade II Bannerlord\' # Common path: 'C:\Program Files(x86)\steam\steamapps\common\Mount & Blade II Bannerlord\'
-$BannerlordModsPath = 'C:\Users\animu\AppData\Roaming\Vortex\mountandblade2bannerlord\mods\' # Common path: 'C:\Users\YourUserNameHere\AppData\Roaming\Vortex\mountandblade2bannerlord\mods\'
-$MergeConfigs = $true
+)
 
-# Hardcoded variable definition
-$NativeModules = @('Native', 'CustomBattle', 'SandBox', 'SandBoxCore', 'zzBannerlordTweaks') # Modules we leave alone, unless there is an override
+## Source: https://github.com/animusyosho/Deploy-NexusBannerlordMods/
 
-# Functions from mergeXml module - https://gallery.technet.microsoft.com/office/Merge-Two-XML-Files-using-a5010498
+$Error.Clear()
+
+# Functions from mergeXml module with a change to the logging from write-host to write-verbose - https://gallery.technet.microsoft.com/office/Merge-Two-XML-Files-using-a5010498
 <#
     Script     : MergeXml
     Author     : Riwut Libinuko
@@ -99,10 +97,10 @@ MANDATORY parameter to specify target Xml filename.
    )
   
    if (!(test-path $sourceXmlFile)) {
-      write-host "Can not find source XML file. $sourceXmlFile."
+      Write-Verbose "Can not find source XML file. $sourceXmlFile."
    }
    if (!(test-path $targetXmlfile)) {
-      write-host "Can not find target XML file. $targetXmlFile."
+      Write-Verbose "Can not find target XML file. $targetXmlFile."
    }
    
    $target = gi $targetXmlfile
@@ -199,7 +197,7 @@ MANDATORY parameter to specify target Xml element.
    )
     
    if ($sourceElement.get_Name() -ne $targetElement.get_Name()) { 
-      write-host "Source element name $($sourceElement.get_Name()) and target element name $($targetElement.get_Name()) do not match" 
+      Write-Verbose "Source element name $($sourceElement.get_Name()) and target element name $($targetElement.get_Name()) do not match" 
       return
    } 
      
@@ -243,7 +241,7 @@ MANDATORY parameter to specify target Xml element.
          }
          elseif ($remove) {
             if (($selectedElement = $targetElement.SelectSingleNode($prevChild.Value.Trim().Remove(0, 7)))) {
-               write-host "Removing element " $selectedElement.OuterXml
+               Write-Verbose "Removing element $($selectedElement.OuterXml)"
                $selectedElement.RemoveAll()
             }
          }
@@ -270,7 +268,7 @@ function OverrideAttribute {
    
    foreach ($SourceAttribute in $Source.get_Attributes()) {
       if ($SourceAttribute.get_Value() -ne $Target.GetAttribute($SourceAttribute.get_Name())) {
-         write-host "Override attribute " $SourceAttribute.get_Name() "," $Target.GetAttribute($SourceAttribute.get_Name()) "=>" $SourceAttribute.get_Value() 
+         Write-Verbose "Override attribute $($SourceAttribute.get_Name()) , $($Target.GetAttribute($SourceAttribute.get_Name())) => $($SourceAttribute.get_Value())" 
       }
       $Target.SetAttribute($SourceAttribute.get_Name(), $SourceAttribute.get_Value())
    }
@@ -286,22 +284,32 @@ function AppendElement {
    $Target.Normalize()
 }
 
-# Get directory items
+# Hardcoded variable definition
+$NativeModulesList = @('Native', 'CustomBattle', 'SandBox', 'SandBoxCore', 'StoryMode') # Modules we leave alone, unless there is an override
 $OverrideModules = @()
 $NewModules = @()
 $BannerlordInstalledModulesPath = "$BannerlordPath\modules".replace('\\', '\')
+$Timestamp = Get-Date -UFormat %Y%m%dT%H%M%S
+$BannerlordModsConfigBackupPath = "$BannerlordModsPath\..\Config Backups\".replace('\\', '\')
+$BackupsToKeep = 50
+if (!(Test-Path -Path $BannerlordModsConfigBackupPath)) {
+   $CreateMissingDirectory = New-item -ItemType Directory -Path $BannerlordModsConfigBackupPath -Force
+}
+
+# Get module directories.
 $NewModulesSourceDirectories = Get-ChildItem -Path $BannerlordModsPath -Directory -ErrorAction SilentlyContinue -Depth 2 | Where-Object -Property FullName -NotIn (Get-ChildItem -Path $BannerlordModsPath -Directory -ErrorAction SilentlyContinue -Depth 1).FullName
-$CurrentOverrideModDirectories = Get-ChildItem -Path $BannerlordInstalledModulesPath -Directory -ErrorAction SilentlyContinue
+$CurrentOverrideModDirectories = Get-ChildItem -Path $BannerlordInstalledModulesPath -Directory -ErrorAction SilentlyContinue | Where-Object -Property Name -NotIn $NativeModulesList
 
 if (!$NewModulesSourceDirectories) {
    Write-Error "No modules found in path '$BannerlordInstalledModulesPath'."
 }
 elseif (!$CurrentOverrideModDirectories) {
-   Write-Error "No mods found in path '$BannerlordModsPath'"
+   Write-Error "No modules found in path '$BannerlordModsPath'"
 }
 else {
    # First we need to fetch all of the files in both locations to work with later. Using these loops to organize some objects for easier data work later.
    foreach ($OverrideModuleDirectory in $CurrentOverrideModDirectories) {
+      $ConfigBackupPath = "$BannerlordModsConfigBackupPath\$($OverrideModuleDirectory.Name)"
       $ConfigFiles = $null
       $OverrideModule = $null
       $OverrideModule = New-Object -TypeName PSCustomObject -Property @{
@@ -310,9 +318,24 @@ else {
       }
       $ConfigFiles = $OverrideModule.ModuleFiles | Where-Object -FilterScript { $_.FullName.tolower() -match '.*\\moduledata\\.*config.*\.xml' }
       if ($ConfigFiles) {
-         $OverrideModule | Add-Member -MemberType NoteProperty -Name 'ModuleConfigFiles' -Value $ConfigFiles
+         $OverrideModule | Add-Member -MemberType NoteProperty -Name 'ConfigFiles' -Value $ConfigFiles
+         if (!(Test-Path -Path $ConfigBackupPath)) {
+            $CreateMissingDirectory = New-item -ItemType Directory -Path $ConfigBackupPath -Force
+         }
       }
       $OverrideModules += $OverrideModule
+      
+      # Back up your currently installed module configs.
+      foreach ($ConfigFile in $ConfigFiles) {
+         $BackupConfig = $ConfigFile | Copy-Item -Destination "$ConfigBackupPath\$($Timestamp)_$($ConfigFile.Name)" -Force
+      }
+      # Clean up old backups if you have more than allowed.
+
+      $Backups = Get-ChildItem -Path $ConfigBackupPath -ErrorAction Ignore | Sort-Object -Property LastWriteTime
+      if ($Backups -and $Backups.Count -gt $BackupsToKeep) {
+         $BackupsToDelete = $Backups.Count - $BackupsToKeep
+         $RemoveOldestBackups = $Backups | Select-object -First $BackupsToDelete
+      }
    } 
    foreach ($NewModuleDirectory in $NewModulesSourceDirectories) {
       $ConfigFiles = $null
@@ -323,14 +346,47 @@ else {
       }
       $ConfigFiles = $NewModule.ModuleFiles | Where-Object -FilterScript { $_.FullName.tolower() -match '.*\\moduledata\\.*config.*\.xml' }
       if ($ConfigFiles) {
-         $NewModule | Add-Member -MemberType NoteProperty -Name 'ModuleConfigFiles' -Value $ConfigFiles
+         $NewModule | Add-Member -MemberType NoteProperty -Name 'ConfigFiles' -Value $ConfigFiles
       }
       $NewModules += $NewModule
    }
 
+   # Merge Configs if switched on.
+   if ($MergeConfigs) {
+      foreach ($OverrideModule in $OverrideModules) {
+         $OverrideModuleName = $OverrideModule.ModuleName
+         foreach ($ConfigFile in $OverrideModule.ConfigFiles) {
+            $MatchedConfig = $null
+            $MatchedConfig = ($NewModules | Where-Object -FilterScript { $_.ConfigFiles }).ConfigFiles | Where-Object -FilterScript { $_.FullName.tolower() -match ".*\\$($OverrideModuleName.tolower())\\.*$($ConfigFile.Name.tolower())" }
+            if ($MatchedConfig) {
+               if ($MatchedConfig.Count -gt 1) {
+                  Write-Error "Something went wrong! The script matched more than one config to file '$($ConfigFile.FullName)'"
+               }
+               else {
+                  $MergeXmlFile = Merge-XmlFile -targetXmlfile $ConfigFile.FullName -sourceXmlFile $MatchedConfig.FullName
+                  $CopyMergedFile = Copy-Item -Path $ConfigFile.FullName -Destination $MatchedConfig.FullName -Force
+               }
+            }
+         }
+      } 
+   }
 
-   # Next merge Xmls so that custom settings are maintained - Note that if the new mod version changes the schema extensively this may break the whole mod. In that case the best thing to to is delete the old config and start over with a default config and reconfigure manually.
-   $OldConfigPath = "$BannerlordPath\Modules\zzBannerlordTweaks\ModuleData\Loadables\config.xml" -replace '\\', '\'
-   $NewConfigPath = "$BannerlordModsPath\BannerlordTweaks 1.0.7-49-1-0-7-1586108060\Modules\zzBannerlordTweaks\ModuleData\Loadables\config.xml" -replace '\\', '\'
-   Merge-XmlFile -targetXmlfile $oldConfigPath -sourceXmlFile $newConfigPath
+   # Delete old modules
+   $ModulesToRemove = $OverrideModules | Where-Object -Property ModuleName -NotIn $NativeModulesList
+   $RemoveOldModules = $ModulesToRemove.ModuleFiles | Remove-Item -Force
+
+   # Finally, deploy modules!
+   foreach ($NewModuleDirectory in $NewModulesSourceDirectories) {
+      $CopyFiles = Copy-Item -Path $NewModuleDirectory.FullName -Destination $BannerlordInstalledModulesPath -Recurse -Force 
+   }  
+
+   # Give a success message if all has gone without errors. If any errors happened inform the user for troubleshooting purposes. 
+   Add-Type -AssemblyName PresentationCore, PresentationFramework
+   if ($Error) {
+      [System.Windows.MessageBox]::Show($Error, 'Error Encountered! Deployment may be incomplete.', [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+   }
+   else {
+      [System.Windows.MessageBox]::Show('Deployment Complete!', 'Success', [System.Windows.MessageBoxButton]::OK)
+   }
+   Exit
 }
